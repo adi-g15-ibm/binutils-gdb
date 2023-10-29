@@ -29,6 +29,7 @@
 #include "reggroups.h"
 #include "observable.h"
 #include "regset.h"
+#include <cstdint>
 #include <unordered_map>
 #include "cli/cli-cmds.h"
 
@@ -1073,6 +1074,31 @@ reg_buffer::raw_supply (int regnum, const void *buf)
 
   if (buf)
     {
+      if (regnum == 64) {
+      /*
+       * Most of the skiboot code is relocated during execution, with an added
+       * offset of `0x30000000`
+       *
+       * But for debugging with gdb, `skiboot.lid` cannot be used with gdb,
+       * which is the one that is actually run by qemu, and has it's code
+       * relocated, instead `skiboot.elf` needs to be used by gdb, where
+       * instructions are at different addresses (ie. before this relocation)
+       *
+       * So, if an instruction is at `0x22af` in skiboot.elf, during actual
+       * execution of `skiboot.lid` by qemu, the same instruction will be
+       * at `0x30000000 + 0x22af` = `0x300022af`
+       *
+       * So, to assist debugging, decreasing the `pc` by `0x30000000`, so
+       * gdb can map the instruction to correct source code line according
+       * to `skiboot.elf`
+       *
+       * Since here the hex value is in an character array 'buf'
+       * When relocated, the 5th byte is set to 0x30 (or more), decrease that
+       *
+       * uint64_t SKIBOOT_BASE = 0x30000000;
+       * */
+	if (((uint8_t*)buf)[4] >= 0x30) ((uint8_t*)buf)[4] -= 0x30;
+      }
       memcpy (regbuf, buf, size);
       m_register_status[regnum] = REG_VALID;
     }

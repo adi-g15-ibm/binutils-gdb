@@ -2253,9 +2253,32 @@ convert_linespec_to_sals (struct linespec_state *state, linespec *ls)
 		{
 		  symtab_and_line sal;
 		  if (symbol_to_sal (&sal, state->funfirstline, sym.symbol)
-		      && maybe_add_address (state->addr_set, pspace, sal.pc))
-		    add_sal_to_sals (state, &sals, &sal,
+		      && maybe_add_address (state->addr_set, pspace, sal.pc)) {
+                      /*
+                       * Most of the skiboot code is relocated during execution, with an added
+                       * offset of `0x30000000`
+                       *
+                       * But for debugging with gdb, `skiboot.lid` cannot be used with gdb,
+                       * which is the one that is actually run by qemu, and has it's code
+                       * relocated, instead `skiboot.elf` needs to be used by gdb, where
+                       * instructions are at different addresses (ie. before this relocation)
+                       *
+                       * So, if an instruction is at `0x22af` in skiboot.elf, during actual
+                       * execution of `skiboot.lid` by qemu, the same instruction will be
+                       * at `0x30000000 + 0x22af` = `0x300022af`
+                       *
+                       * So, to assist debugging, decreasing the `pc` by `0x30000000`, so
+                       * gdb can map the instruction to correct source code line according
+                       * to `skiboot.elf`
+                       *
+                       * Since here the hex value is in an character array 'buf'
+                       * When relocated, the 5th byte is set to 0x30 (or more), decrease that
+                       * */
+		      uint64_t SKIBOOT_BASE = 0x30000000;
+		      if (sal.pc <= SKIBOOT_BASE) sal.pc += SKIBOOT_BASE;
+		      add_sal_to_sals (state, &sals, &sal,
 				     sym.symbol->natural_name (), 0);
+		  }
 		}
 	    }
 	}

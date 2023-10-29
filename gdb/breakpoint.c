@@ -11830,11 +11830,37 @@ code_breakpoint::say_where () const
   else
     {
       const bp_location &bl = this->first_loc ();
-      if (opts.addressprint || bl.symtab == nullptr)
-	gdb_printf (" at %ps",
+      if (opts.addressprint || bl.symtab == nullptr) {
+                      /*
+                       * Most of the skiboot code is relocated during execution, with an added
+                       * offset of `0x30000000`
+                       *
+                       * But for debugging with gdb, `skiboot.lid` cannot be used with gdb,
+                       * which is the one that is actually run by qemu, and has it's code
+                       * relocated, instead `skiboot.elf` needs to be used by gdb, where
+                       * instructions are at different addresses (ie. before this relocation)
+                       *
+                       * So, if an instruction is at `0x22af` in skiboot.elf, during actual
+                       * execution of `skiboot.lid` by qemu, the same instruction will be
+                       * at `0x30000000 + 0x22af` = `0x300022af`
+                       *
+                       * So, to assist debugging, decreasing the `pc` by `0x30000000`, so
+                       * gdb can map the instruction to correct source code line according
+                       * to `skiboot.elf`
+                       *
+                       * Since here the hex value is in an character array 'buf'
+                       * When relocated, the 5th byte is set to 0x30 (or more), decrease that
+                       * */
+              uint64_t SKIBOOT_BASE = 0x30000000;
+	      uint64_t elf_address = bl.address;
+	      if (elf_address >= SKIBOOT_BASE) elf_address -= SKIBOOT_BASE;
+	      gdb_printf (" at %ps (%ps in skiboot.elf)",
 		    styled_string (address_style.style (),
-				   paddress (bl.gdbarch,
-					     bl.address)));
+				   paddress (bl.gdbarch, bl.address)),
+		    styled_string (address_style.style (),
+				   paddress (bl.gdbarch, elf_address))
+				   );
+      }
       if (bl.symtab != NULL)
 	{
 	  /* If there is a single location, we can print the location
